@@ -53,7 +53,7 @@ init() {
   [[ ! -e $root ]] || die "An unfinished or existing filesystem is at $root."
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -q
-  apt-get install -y -q --no-install-recommends debootstrap systemd-container
+  apt-get install -y -q --no-install-recommends acl debootstrap systemd-container
   mkdir -p "${root%/*}"
   local staging
   staging=$(mktemp -d "${root%/*}/.opencomputer.XXXXXXXX")
@@ -90,9 +90,6 @@ start() (
   # Enable the controllers required by systemd and the Podman runner's limits.
   printf '+cpu +io +memory +pids\n' > "${cgroup%/*}/cgroup.subtree_control"
   mkdir "$cgroup"
-  # Pasta needs the device open as the rootless runner user. Creating the tap
-  # still requires CAP_NET_ADMIN in the runner's network namespace.
-  chmod 0666 /dev/net/tun
   (
     printf '%s\n' "$BASHPID" > "$cgroup/cgroup.procs"
     exec systemd-nspawn --boot --keep-unit --register=no --console=pipe \
@@ -125,8 +122,12 @@ start() (
     sleep .1
   done
   [[ -n $pid ]] && ip link show "$veth" >/dev/null 2>&1 || die 'Timed out waiting for systemd and its network.'
-  # Orble's in-guest gateway can change the outer box and supply box secrets.
-  # Sessions in this Computer must use only the Computer's own credentials.
+  # nspawn creates its own /dev/net/tun node. Grant access to the runner UID
+  # from deploy/vm/provision.sh so Pasta can create the session's tap.
+  setfacl -m u:1500:rw "/proc/$pid/root/dev/net/tun"
+  # The Orble Self API trusts callers inside the box. Block traffic from
+  # the nested Computer so its sessions cannot manage the outer box or use
+  # its secret proxy.
   if ! iptables-legacy -C FORWARD "${self_api[@]}" 2>/dev/null; then
     iptables-legacy -I FORWARD "${self_api[@]}"
     self_api_block_added=true
@@ -157,6 +158,10 @@ start() (
 case "${1:-}" in
   init) init ;;
   start) start ;;
+  host-address)
+    [[ -f $ready ]] || die 'Wait for box.sh start to finish booting the Computer.'
+    printf '%s\n' "$host_ip"
+    ;;
   exec)
     shift
     [[ $# -gt 0 ]] || die 'Pass a command to run inside the Computer.'
@@ -171,5 +176,5 @@ case "${1:-}" in
     [[ -n $pid ]] || die 'The Computer is stopped.'
     exec nsenter -t "$pid" -a -- systemctl poweroff
     ;;
-  *) die 'Usage: box.sh init | start | exec COMMAND [ARG ...] | stop' ;;
+  *) die 'Usage: box.sh init | start | host-address | exec COMMAND [ARG ...] | stop' ;;
 esac
