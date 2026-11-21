@@ -85,6 +85,10 @@ start() (
   if [[ -d $cgroup ]]; then
     find "$cgroup" -depth -type d -exec rmdir {} +
   fi
+  # Orble mounts cgroup v2, but a box that has never run a container engine
+  # can have no controllers enabled for children of the guest's root cgroup.
+  # Enable the controllers required by systemd and the Podman runner's limits.
+  printf '+cpu +io +memory +pids\n' > "${cgroup%/*}/cgroup.subtree_control"
   mkdir "$cgroup"
   # Pasta needs the device open as the rootless runner user. Creating the tap
   # still requires CAP_NET_ADMIN in the runner's network namespace.
