@@ -1,0 +1,25 @@
+[Unit]
+Description=OpenComputer Slack gateway
+After=network-online.target
+Wants=network-online.target
+Before=slack-presence-host.service
+
+[Service]
+User=sp-gateway
+Group=sp-gateway
+WorkingDirectory=/opt/slack-presence/current
+EnvironmentFile=/opt/slack-presence/current/.sp-version.env
+EnvironmentFile=/etc/slack-presence/gateway.env
+ExecStart=/usr/local/bin/node --import tsx src/gateway/main.ts
+StateDirectory=opencomputer-gateway
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

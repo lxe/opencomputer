@@ -47,3 +47,15 @@ ssh <box-host> 'sudo opencomputer-box exec journalctl -u slack-presence-host -n 
 ```
 
 The Computer should appear online in OpenComputer. Enable **Keep awake** in Orble for a box that needs to receive new work through its gateway connection. If Orble cold-boots the VM, rerun the launcher command to bring systemd and the host service back up.
+
+## Run the standalone Slack gateway on Orble
+
+The standalone Slack gateway can run alongside the Computer on the same box. Slack sends HTTPS callbacks to an Orble shared port. The Computer connects to the gateway over its local loopback interface, and the gateway stores Slack credentials and session routing in SQLite under `/var/lib/opencomputer-gateway`.
+
+1. Enable **Keep awake**, then share the port with `orble port <box> 3170 --public`. Use the resulting HTTPS address as `SP_ORIGIN`.
+2. Inside the Computer, create the system user and group `sp-gateway` and install `opencomputer-gateway.service` in `/etc/systemd/system/`. In the root-only `/etc/slack-presence/gateway.env`, set `PORT=3170`, `SP_ORIGIN`, and `SP_DB=/var/lib/opencomputer-gateway/gateway.db`. Generate a separate random value for each of `SP_STORE_KEY`, `SETUP_TOKEN`, and `SP_HOST_TOKENS` with `openssl rand -hex 32`. Set `SP_PEOPLE` to the JSON list of Slack users allowed to start sessions.
+3. In the Computer's `/etc/slack-presence/host.env`, set `SP_GATEWAY_URL=ws://127.0.0.1:3170/host`, `SP_LAUNCH=podman`, a stable `SP_HOST_ID`, and `SP_HOST_TOKEN` to the value of `SP_HOST_TOKENS`. Enable and start `opencomputer-gateway.service` and `slack-presence-host.service`.
+4. In the outer Orble box, install `socat` and place the executable `40-opencomputer-slack` in `/etc/orble/on-resume.d/`. Run it once to connect Orble's shared port to the Computer. On resume, the hook checks whether the Computer needs to start and restores the port bridge.
+5. Use the gateway's protected `/setup` page to configure Slack and the model credential. The [Calvin README](../../README.md#running-it-for-a-team) describes the gateway, host, and credential setup.
+
+The gateway's `/healthz` lists connected hosts. After installing the Slack app, send it a direct message from an allowed account to verify that the gateway can start a session and deliver its reply.
