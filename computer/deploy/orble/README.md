@@ -14,7 +14,7 @@ ssh <box-host> 'sudo install -m 0755 /dev/stdin /usr/local/sbin/opencomputer-box
   < computer/deploy/orble/box.sh
 ssh <box-host> 'sudo opencomputer-box init'
 ssh <box-host> 'sudo sh -c "nohup opencomputer-box start </dev/null >/var/log/opencomputer-box.log 2>&1 &"'
-ssh <box-host> 'sudo opencomputer-box exec systemctl is-system-running --wait'
+ssh <box-host> 'timeout 30 sh -c "until test -f /run/orble-opencomputer.ready; do sleep 1; done"'
 ```
 
 Build the release from a committed checkout on your workstation. Go builds the model proxy, and an authenticated GitHub CLI verifies the upstream session image attestation before the release records the image digest.

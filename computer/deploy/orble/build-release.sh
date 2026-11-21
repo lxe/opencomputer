@@ -13,7 +13,9 @@ deploy/bundle.sh "$tmp/computer.bundle" >/dev/null
 git clone -q --branch main "$tmp/computer.bundle" "$tmp/release"
 printf '%s\n' "$image" > "$tmp/release/deploy/image.pin"
 git -C "$tmp/release" add -f deploy/image.pin
-git -C "$tmp/release" -c user.name=OpenComputer -c user.email=release@opencomputer.invalid \
-  -c commit.gpgsign=false commit -qm 'Pin the OpenComputer session image'
+stamp=$(git -C "$tmp/release" log -1 --format=%ct)
+GIT_AUTHOR_DATE="@$stamp +0000" GIT_COMMITTER_DATE="@$stamp +0000" \
+  git -C "$tmp/release" -c user.name=OpenComputer -c user.email=release@opencomputer.invalid \
+    -c commit.gpgsign=false commit -qm 'Pin the OpenComputer session image'
 git -C "$tmp/release" bundle create "$tmp/pinned.bundle" refs/heads/main
 mv "$tmp/pinned.bundle" "$output"
