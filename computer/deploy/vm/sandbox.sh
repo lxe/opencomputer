@@ -169,8 +169,9 @@ install_tier() {
   # namespaces to programs with a profile that allows them. Gate G6 measured the
   # same result with and without this profile; it stays until that is measured
   # after a reboot as well.
-  local profile=/etc/apparmor.d/pasta
-  if write_if_changed "$profile" 0644 <<'EOF' || ! grep -qs '^pasta ' /sys/kernel/security/apparmor/profiles
+  if grep -qs '^Y$' /sys/module/apparmor/parameters/enabled; then
+    local profile=/etc/apparmor.d/pasta
+    if write_if_changed "$profile" 0644 <<'EOF' || ! grep -qs '^pasta ' /sys/kernel/security/apparmor/profiles
 abi <abi/4.0>,
 include <tunables/global>
 profile pasta /usr/bin/pasta{,.avx2} flags=(unconfined) {
@@ -179,9 +180,10 @@ profile pasta /usr/bin/pasta{,.avx2} flags=(unconfined) {
   include if exists <local/pasta>
 }
 EOF
-  then
-    log "AppArmor profile for pasta"
-    apparmor_parser -r "$profile"
+    then
+      log "AppArmor profile for pasta"
+      apparmor_parser -r "$profile"
+    fi
   fi
 
   # A range shared with another user would give that user's containers the

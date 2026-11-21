@@ -41,6 +41,8 @@
 #   GO_VERSION        exact Go version instead (e.g. 1.27.3)
 #   NODE_MAJOR        Node.js major (default 24)
 #   INSTALL_DOCKER    0 (default) | 1. See "Docker" below.
+#   BLOCK_METADATA_ALL  1 to block metadata for every user in a dedicated
+#                     Computer network namespace without the iptables owner match.
 #   CODE_ONLY         1: skip apt packages and toolchains (Node, gh, Claude Code
 #                     CLI, Go, uv) on a host provisioned before; deploy/update.sh
 #                     sets it on every merge. Run without it to refresh toolchains.
@@ -476,6 +478,7 @@ usermod -a -G "$AGENT_USER" "$WIRE_USER"
 for g in sudo admin adm lxd docker; do gpasswd -d "$WIRE_USER" "$g" >/dev/null 2>&1 || true; done
 # No process may ptrace one that is not its descendant: a session cannot read
 # the relay's memory (its connections' credentials), nor the relay a runner's.
+install -d -m 0755 /etc/sysctl.d
 printf '# Written by deploy/vm/provision.sh (work 084).\nkernel.yama.ptrace_scope = 1\n' > /etc/sysctl.d/60-slack-presence-wire.conf
 sysctl -q -p /etc/sysctl.d/60-slack-presence-wire.conf || warn "could not set kernel.yama.ptrace_scope=1"
 
@@ -752,6 +755,7 @@ EOF
 # are taken out first and inserted again after it: every rule goes in at the
 # top, and an ACCEPT left below the REJECT would cut the sessions' DNS.
 wire="-d 168.63.129.16"; owner="-m owner --uid-owner $AGENT_UID"
+if [[ ${BLOCK_METADATA_ALL:-0} == 1 ]]; then owner=""; fi
 cat > /etc/systemd/system/slack-presence-imds-block.service <<EOF
 [Unit]
 Description=Block the cloud instance metadata service (EC2 and Azure IMDS) for the $AGENT_USER user
@@ -761,9 +765,9 @@ Before=slack-presence-host.service user@$AGENT_UID.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/bin/sh -c 'iptables -C OUTPUT -d 169.254.169.254 -m owner --uid-owner $AGENT_UID -j REJECT 2>/dev/null || iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner $AGENT_UID -j REJECT'
-ExecStart=-/bin/sh -c 'ip6tables -C OUTPUT -d fd00:ec2::254 -m owner --uid-owner $AGENT_UID -j REJECT 2>/dev/null || ip6tables -I OUTPUT -d fd00:ec2::254 -m owner --uid-owner $AGENT_UID -j REJECT'
-ExecStart=-/bin/sh -c 'ip6tables -C OUTPUT -d fd20:ce::254 -m owner --uid-owner $AGENT_UID -j REJECT 2>/dev/null || ip6tables -I OUTPUT -d fd20:ce::254 -m owner --uid-owner $AGENT_UID -j REJECT'
+ExecStart=/bin/sh -c 'iptables -C OUTPUT -d 169.254.169.254 $owner -j REJECT 2>/dev/null || iptables -I OUTPUT -d 169.254.169.254 $owner -j REJECT'
+ExecStart=-/bin/sh -c 'ip6tables -C OUTPUT -d fd00:ec2::254 $owner -j REJECT 2>/dev/null || ip6tables -I OUTPUT -d fd00:ec2::254 $owner -j REJECT'
+ExecStart=-/bin/sh -c 'ip6tables -C OUTPUT -d fd20:ce::254 $owner -j REJECT 2>/dev/null || ip6tables -I OUTPUT -d fd20:ce::254 $owner -j REJECT'
 ExecStart=/bin/sh -c 'iptables -C OUTPUT $wire $owner -j REJECT 2>/dev/null || { iptables -D OUTPUT $wire -p udp --dport 53 $owner -j ACCEPT 2>/dev/null; iptables -D OUTPUT $wire -p tcp --dport 53 $owner -j ACCEPT 2>/dev/null; iptables -I OUTPUT $wire $owner -j REJECT; }'
 ExecStart=/bin/sh -c 'iptables -C OUTPUT $wire -p udp --dport 53 $owner -j ACCEPT 2>/dev/null || iptables -I OUTPUT $wire -p udp --dport 53 $owner -j ACCEPT'
 ExecStart=/bin/sh -c 'iptables -C OUTPUT $wire -p tcp --dport 53 $owner -j ACCEPT 2>/dev/null || iptables -I OUTPUT $wire -p tcp --dport 53 $owner -j ACCEPT'

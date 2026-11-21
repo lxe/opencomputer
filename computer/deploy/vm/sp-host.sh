@@ -168,16 +168,23 @@ EOF
   mv "$SUDOERS.tmp" "$SUDOERS"
 
   # The metadata service (cloud credentials): blocked for agent by provision.sh, for these here.
-  local rules=() u
-  for u in "$HOST_USER" modelproxy; do
-    id "$u" >/dev/null 2>&1 || continue
-    rules+=("ExecStart=/bin/sh -c 'iptables -C OUTPUT -d 169.254.169.254 -m owner --uid-owner $u -j REJECT 2>/dev/null || iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner $u -j REJECT'")
-  done
+  local rules=() u metadata_dependency=""
+  if [[ ${BLOCK_METADATA_ALL:-0} == 1 ]]; then
+    # The main unit already covers these users in this Computer's network namespace.
+    metadata_dependency=$'Requires=slack-presence-imds-block.service\nAfter=slack-presence-imds-block.service'
+    rules+=("ExecStart=/usr/sbin/iptables -C OUTPUT -d 169.254.169.254 -j REJECT")
+  else
+    for u in "$HOST_USER" modelproxy; do
+      id "$u" >/dev/null 2>&1 || continue
+      rules+=("ExecStart=/bin/sh -c 'iptables -C OUTPUT -d 169.254.169.254 -m owner --uid-owner $u -j REJECT 2>/dev/null || iptables -I OUTPUT -d 169.254.169.254 -m owner --uid-owner $u -j REJECT'")
+    done
+  fi
   cat > "$IMDS_UNIT" <<EOF
 # Written by deploy/vm/sp-host.sh.
 [Unit]
 Description=Block the cloud instance metadata service for $HOST_USER and the model proxy
 After=network-pre.target
+$metadata_dependency
 Before=$UNIT oc-modelproxy.service
 
 [Service]

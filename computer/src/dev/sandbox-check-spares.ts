@@ -37,6 +37,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { IMAGE_LOCK } from '../host/sandbox/image-lock.js';
+import { containerState } from '../host/sandbox/podman.js';
 import { containerName, pidArgs, unitName, volumeName } from '../host/sandbox/podman-args.js';
 import type { Records } from '../host/sandbox/records.js';
 import { sandboxRunFor } from '../ipc.js';
@@ -118,7 +119,7 @@ export async function spareChecks(k: SpareKit) {
   }
 
   // ---- containers, by id
-  const status = (id: string) => podman(['inspect', '--format', '{{.State.Status}}', containerName(id)]).then((s) => s.trim(), () => 'none');
+  const status = (id: string) => podman(['inspect', '--format', '{{.State.Status}}', containerName(id)]).then((s) => containerState(s.trim()), () => 'none');
   const inside = (id: string, script: string) =>
     podman(['exec', '--user', '1500:1500', containerName(id), '/bin/sh', '-c', script], 60_000).then((s) => s.trim(), (e) => `error: ${String(e?.stderr || e?.message).trim()}`);
   const running = async () => new Set((await podman(['ps', '--format', '{{.Names}}'])).split('\n'));

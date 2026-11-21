@@ -44,6 +44,9 @@ import { imageBusy, imageSettled } from './image-lock.js';
 
 export const PODMAN = '/usr/bin/podman';
 
+/** Podman can report a finished container as either "stopped" or "exited". */
+export const containerState = (state: string) => state === 'stopped' ? 'exited' : state;
+
 export class PodmanError extends Error {
   constructor(
     message: string,

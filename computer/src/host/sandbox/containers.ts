@@ -43,7 +43,7 @@ import type { RunnerSpec } from '../../protocol.js';
 import { type RunRoot, runnersDir, secretsFor, tokenSocketFor } from '../../ipc.js';
 import { log } from '../../log.js';
 import { bootEnv } from './boot-env.js';
-import type { AsRunner } from './podman.js';
+import { type AsRunner, containerState } from './podman.js';
 import {
   HOME_LABEL, containerName, createArgs, emptyRunArgs, execArgs, homeArgs, inventoryArgs, logsArgs, pidArgs, recreateRemoveArgs, removeArgs, stopArgs, unitName,
 } from './podman-args.js';
@@ -273,7 +273,7 @@ export function containers(d: ContainersDeps) {
         // The label and the name agree for every container the host made; anything else is not ours to touch.
         if (typeof id !== 'string' || !SANDBOX_ID.test(id) || !c.Names?.includes?.(containerName(id))) return [];
         if (!Array.isArray(c.Mounts) || !c.Mounts.includes(d.runRoot(id))) return (foreign.push(id), []);
-        return [{ id, state: String(c.State ?? ''), abi: String(c.Labels?.['sp.abi'] ?? ''), image: String(c.Image ?? ''), createdAt: Number(c.Created ?? 0) * 1000 }];
+        return [{ id, state: containerState(String(c.State ?? '')), abi: String(c.Labels?.['sp.abi'] ?? ''), image: String(c.Image ?? ''), createdAt: Number(c.Created ?? 0) * 1000 }];
       }),
       volumes: parse(vs).flatMap((v) => {
         const m = /^sp-home-([0-9a-f]{16})$/.exec(String(v?.Name ?? ''));

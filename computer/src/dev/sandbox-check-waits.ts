@@ -57,7 +57,7 @@ export async function waits(x: Rig, b: T, e: T) {
   const { check, say, until } = x.kit;
   const podman = (args: string[], timeoutMs = 30_000) => x.as.podman(args, { timeoutMs });
   const has = (kind: 'container' | 'volume', name: string) => podman([kind, 'exists', name]).then(() => true, () => false);
-  const status = (t: T) => t.inspect('{{.State.Status}}');
+  const status = (t: T) => t.status();
   const dir = (id: string) => sandboxRunFor(x.run, id);
   const [Y, O, N] = Array.from({ length: 3 }, () => randomBytes(8).toString('hex'));
   const member = b.owner.userId as string;

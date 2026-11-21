@@ -63,7 +63,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { runnerUser } from '../host/runner-user.js';
 import { mounts } from '../host/sandbox/mounts.js';
-import { asRunner, type PodmanError } from '../host/sandbox/podman.js';
+import { asRunner, containerState, type PodmanError } from '../host/sandbox/podman.js';
 import { containerName, execArgs, mountArgs, pidArgs, unitName, unshareRmArgs, volumeName } from '../host/sandbox/podman-args.js';
 import { sandboxRecords } from '../host/sandbox/records.js';
 import { type SandboxPlace, sandboxScripts } from '../host/sandbox/scripts.js';
@@ -237,6 +237,7 @@ function thread(owner: Person, n: number, sessionId?: string) {
     },
     reports: () => events.flatMap((e) => (e.t === 'session' && e.report.key === key ? [e.report] : [])),
     inspect: (format: string) => podman(['inspect', '--format', format, containerName(id())]).then((s) => s.trim(), () => ''),
+    status: () => podman(['inspect', '--format', '{{.State.Status}}', containerName(id())]).then((s) => containerState(s.trim()), () => ''),
     logs: () => podman(['logs', containerName(id())]).catch(() => ''),
     unitActive: () => as.run(['/usr/bin/systemctl', '--user', 'is-active', '--quiet', unitName(id())], { timeoutMs: 5000 }).then(() => true, () => false),
     /** A shell script inside, as the session's user (or root, which is the runners' user outside); what it printed, or `error: …`. */
@@ -433,7 +434,7 @@ try {
   check(!!record && record.key === A1.key && record.person === PAT.dir, `the thread has a record: ${JSON.stringify(record)}`);
   if (!id) throw new Error('no record: nothing more can be checked');
   const run = A1.run;
-  check((await A1.inspect('{{.State.Status}}')) === 'running' && (await A1.unitActive()), `container ${containerName(id)} runs and its unit ${unitName(id)} is active`);
+  check((await A1.status()) === 'running' && (await A1.unitActive()), `container ${containerName(id)} runs and its unit ${unitName(id)} is active`);
   const pid = await A1.pid();
   const cgroup = pid ? readFileSync(`/proc/${pid}/cgroup`, 'utf8').trim() : '';
   check(new RegExp(`/${unitName(id).replace(/\./g, '\\.')}/`).test(cgroup), `its first process (${pid}) is in that unit's cgroup: ${cgroup}`);
@@ -470,7 +471,7 @@ try {
   // ---- what reaches into a running container (step 9): the two threads of one person
   const dA2 = await A2.deliver();
   kept.add(A2);
-  check(!!dA2.reply?.ok && !!A2.id() && A2.id() !== id && (await A2.inspect('{{.State.Status}}')) === 'running', `the second thread of the same person runs in its own container ${containerName(A2.id())}`);
+  check(!!dA2.reply?.ok && !!A2.id() && A2.id() !== id && (await A2.status()) === 'running', `the second thread of the same person runs in its own container ${containerName(A2.id())}`);
   sessions.push(await known(A1.spec), await known(A2.spec));
   const a = reached('A', A1, sessions[0]);
   const b = reached('B', A2, sessions[1]);
@@ -488,7 +489,7 @@ try {
     inside: (cid, script) => podman(['exec', '--user', '1500:1500', containerName(cid), '/bin/sh', '-c', script]).then((s) => s.trim()),
     detached: (cid, argv) => podman(['exec', '--detach', '--user', '1500:1500', containerName(cid), ...argv]),
     asRunner: (argv) => as.run(argv, { timeoutMs: 10_000 }),
-    status: (cid) => byId(cid).inspect('{{.State.Status}}'),
+    status: (cid) => byId(cid).status(),
     tell: (t, text) => byId(t.id).deliver(mkTrace(), text),
     filesPlace: (t, running) => files({ id: t.id, person: path.basename(path.dirname(path.dirname(t.workspace))), workspace: t.workspace, running }),
   };
@@ -499,7 +500,7 @@ try {
   clearInterval(keeping);
   await A1.deliver();
   const idleAt = Date.now();
-  check(!!(await until(async () => ((await A1.inspect('{{.State.Status}}')) === 'exited' ? true : undefined), IDLE_MS + 40_000)),
+  check(!!(await until(async () => ((await A1.status()) === 'exited' ? true : undefined), IDLE_MS + 40_000)),
     `idle for ${IDLE_MS} ms: the runner left and the container is exited (${Date.now() - idleAt} ms after the delivery)`);
   check(!!(await until(async () => ((await A1.unitActive()) ? undefined : true), 10_000)), 'its unit is gone');
   check((await podman(['volume', 'exists', volumeName(id)]).then(() => true, () => false)) && !!A1.record(), 'its home volume and its record stay');
@@ -519,14 +520,14 @@ try {
     `housekeeping removed the ignored node_modules (with a file root made inside) ${Date.now() - keepAt} ms after it was asked, and kept .venv, which git does not ignore`);
 
   // ---- what reaches a stopped thread (step 9)
-  check(!!(await until(async () => ((await A2.inspect('{{.State.Status}}')) === 'exited' && !(await A2.unitActive()) ? true : undefined), 30_000)), 'the second thread is stopped too');
-  check(!!(await until(async () => ((await B.inspect('{{.State.Status}}')) === 'exited' && !(await B.unitActive()) ? true : undefined), 30_000)), "and the other person's");
+  check(!!(await until(async () => ((await A2.status()) === 'exited' && !(await A2.unitActive()) ? true : undefined), 30_000)), 'the second thread is stopped too');
+  check(!!(await until(async () => ((await B.status()) === 'exited' && !(await B.unitActive()) ? true : undefined), 30_000)), "and the other person's");
   await reachStopped(kit, a, b, q);
 
   // ---- resume
   const d3 = await A1.deliver();
   check(!!d3.reply?.ok, `delivery after the idle exit → ok in ${d3.ms} ms (${d3.reply?.error ?? ''})`);
-  check(A1.record()?.id === id && (await A1.inspect('{{.State.Status}}')) === 'running' && (await A1.unitActive()), 'the same container runs again, under the same id');
+  check(A1.record()?.id === id && (await A1.status()) === 'running' && (await A1.unitActive()), 'the same container runs again, under the same id');
   check((await A1.inside('cat /home/agent/sandbox-check-marker')) === 'kept', 'a file written in its home before the exit is there');
   const l3 = launched(d3.trace) ?? (await until(() => launched(d3.trace), 10_000));
   check(l3?.data?.['container.recreated'] === false && l3.data['container.create_ms'] === undefined && typeof l3.data['container.mount_ms'] === 'number' && l3.data['container.add_ms'] === undefined,

@@ -54,6 +54,7 @@ export interface T {
   branch: string;
   deliver(): Promise<{ reply?: { ok: boolean; error?: string }; ms: number }>;
   inspect(format: string): Promise<string>;
+  status(): Promise<string>;
   inside(script: string, as_?: string): Promise<string>;
   pid(): Promise<number>;
   askToken(): Promise<string>;
@@ -97,7 +98,7 @@ export async function restarts(x: Rig, A: T, B: T, Q: T, C: T, E: T) {
   const reach = (name: string, t: T): Reached => ({ name, spec: t.spec, sessionId: '', id: t.id(), run: t.run, workspace: t.workspace, member: '' });
   const started = async (t: T) => ({ pid: await t.pid(), at: await t.inspect('{{.State.StartedAt}}') });
   const same = async (t: T, was: { pid: number; at: string }) => (await t.pid()) === was.pid && (await t.inspect('{{.State.StartedAt}}')) === was.at;
-  const status = (t: T) => t.inspect('{{.State.Status}}');
+  const status = (t: T) => t.status();
   const tookBack = (t: T, from: number) => /taken back for \S+ in (\d+) ms/.exec(x.lines.slice(from).find((l) => l.includes(`taken back for ${t.key} `)) ?? '')?.[1];
   const failedUnit = (id: string) => x.as.run(['/usr/bin/systemctl', '--user', 'is-failed', '--quiet', unitName(id)], { timeoutMs: 5000 }).then(() => true, () => false);
   const port = (name: string) => k.asked.find((q) => q.req.name === name)?.req.port ?? 0;
