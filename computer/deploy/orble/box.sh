@@ -97,13 +97,18 @@ start() (
   ) &
   nspawn=$! pid=''
   nat=(-s "$computer_ip/32" -o "$iface" -j MASQUERADE)
+  self_api=(-i "$veth" -d 169.254.77.77/32 -j REJECT)
   nat_added=false
+  self_api_block_added=false
   cleanup() {
     rm -f "$ready"
     kill -TERM "$nspawn" 2>/dev/null || true
     wait "$nspawn" || true
     if "$nat_added"; then
       iptables-legacy -t nat -D POSTROUTING "${nat[@]}" 2>/dev/null || true
+    fi
+    if "$self_api_block_added"; then
+      iptables-legacy -D FORWARD "${self_api[@]}" 2>/dev/null || true
     fi
     sysctl -qw "net.ipv4.ip_forward=$previous_forward"
   }
@@ -116,6 +121,12 @@ start() (
     sleep .1
   done
   [[ -n $pid ]] && ip link show "$veth" >/dev/null 2>&1 || die 'Timed out waiting for systemd and its network.'
+  # Orble's in-guest gateway can change the outer box and supply box secrets.
+  # Sessions in this Computer must use only the Computer's own credentials.
+  if ! iptables-legacy -C FORWARD "${self_api[@]}" 2>/dev/null; then
+    iptables-legacy -I FORWARD "${self_api[@]}"
+    self_api_block_added=true
+  fi
   ip address replace "$host_ip/30" dev "$veth"
   ip link set "$veth" up
   nsenter -t "$pid" -n -- ip address replace "$computer_ip/30" dev host0
